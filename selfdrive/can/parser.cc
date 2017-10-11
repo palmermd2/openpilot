@@ -18,7 +18,7 @@
 #include <capnp/serialize.h>
 #include "cereal/gen/cpp/log.capnp.h"
 
-#include "parser_common.h"
+#include "common.h"
 
 #define DEBUG(...)
 // #define DEBUG printf
@@ -39,8 +39,6 @@ uint64_t read_u64_be(const uint8_t* v) {
           | ((uint64_t)v[6] << 8)
           | (uint64_t)v[7]);
 }
-
-std::vector<const DBC*> g_dbc;
 
 bool honda_checksum(int address, uint64_t d, int l) {
   int target = (d >> l) & 0xF;
@@ -66,19 +64,20 @@ struct MessageState {
   std::vector<Signal> parse_sigs;
   std::vector<double> vals;
 
+  uint16_t ts;
   uint64_t seen;
   uint64_t check_threshold;
 
   uint8_t counter;
   uint8_t counter_fail;
 
-  bool parse(uint64_t sec, uint64_t dat) {
+  bool parse(uint64_t sec, uint16_t ts_, uint64_t dat) {
     for (int i=0; i < parse_sigs.size(); i++) {
       auto& sig = parse_sigs[i];
 
-      int64_t tmp = (dat >> sig.bo) & ((1 << sig.b2)-1);
+      int64_t tmp = (dat >> sig.bo) & ((1ULL << sig.b2)-1);
       if (sig.is_signed) {
-        tmp -= (tmp >> (sig.b2-1)) ? (1<<sig.b2) : 0; //signed
+        tmp -= (tmp >> (sig.b2-1)) ? (1ULL << sig.b2) : 0; //signed
       }
 
       DEBUG("parse %X %s -> %ld\n", address, sig.name, tmp);
@@ -96,6 +95,7 @@ struct MessageState {
 
       vals[i] = tmp * sig.factor + sig.offset;
     }
+    ts = ts_;
     seen = sec;
 
     return true;
@@ -121,6 +121,7 @@ struct MessageState {
 
 };
 
+
 class CANParser {
  public:
   CANParser(int abus, const std::string& dbc_name,
@@ -133,15 +134,10 @@ class CANParser {
     zmq_setsockopt(subscriber, ZMQ_SUBSCRIBE, "", 0);
     zmq_connect(subscriber, "tcp://127.0.0.1:8006");
 
-    for (auto dbci : g_dbc) {
-      if (dbci->name == dbc_name) {
-        dbc = dbci;
-        break;
-      }
-    }
+    dbc = dbc_lookup(dbc_name);
     assert(dbc);
 
-    for (auto &op : options) {
+    for (const auto& op : options) {
       MessageState state = {
         .address = op.address,
         // .check_frequency = op.check_frequency,
@@ -176,7 +172,7 @@ class CANParser {
       }
 
       // track requested signals for this message
-      for (auto &sigop : sigoptions) {
+      for (const auto& sigop : sigoptions) {
         if (sigop.address != op.address) continue;
 
         for (int i=0; i<msg->num_sigs; i++) {
@@ -222,14 +218,14 @@ class CANParser {
 
         DEBUG("  proc %X: %lx\n", cmsg.getAddress(), p);
 
-        state_it->second.parse(sec, p);
+        state_it->second.parse(sec, cmsg.getBusTime(), p);
       }
   }
 
   void UpdateValid(uint64_t sec) {
     can_valid = true;
-    for (auto &kv : message_states) {
-      auto &state = kv.second;
+    for (const auto& kv : message_states) {
+      const auto& state = kv.second;
       if (state.check_threshold > 0 && (sec - state.seen) > state.check_threshold) {
         if (state.seen > 0) {
           INFO("%X TIMEOUT\n", state.address);
@@ -277,14 +273,15 @@ class CANParser {
   std::vector<SignalValue> query(uint64_t sec) {
     std::vector<SignalValue> ret;
 
-    for (auto &kv : message_states) {
-      auto &state = kv.second;
+    for (const auto& kv : message_states) {
+      const auto& state = kv.second;
       if (sec != 0 && state.seen != sec) continue;
       
       for (int i=0; i<state.parse_sigs.size(); i++) {
         const Signal &sig = state.parse_sigs[i];
         ret.push_back((SignalValue){
           .address = state.address,
+          .ts = state.ts,
           .name = sig.name,
           .value = state.vals[i],
         });
@@ -306,10 +303,6 @@ class CANParser {
   std::unordered_map<uint32_t, MessageState> message_states;
 };
 
-}
-
-void dbc_register(const DBC* dbc) {
-  g_dbc.push_back(dbc);
 }
 
 extern "C" {

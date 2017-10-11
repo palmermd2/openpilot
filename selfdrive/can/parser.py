@@ -1,50 +1,14 @@
 import os
 import time
-import subprocess
 from collections import defaultdict
 
-from cffi import FFI
-
-can_dir = os.path.dirname(os.path.abspath(__file__))
-libdbc_fn = os.path.join(can_dir, "libdbc.so")
-subprocess.check_output(["make"], cwd=can_dir)
-
-ffi = FFI()
-ffi.cdef("""
-
-typedef struct SignalParseOptions {
-  uint32_t address;
-  const char* name;
-  double default_value;
-} SignalParseOptions;
-
-typedef struct MessageParseOptions {
-  uint32_t address;
-  int check_frequency;
-} MessageParseOptions;
-
-typedef struct SignalValue {
-  uint32_t address;
-  const char* name;
-  double value;
-} SignalValue;
-
-void* can_init(int bus, const char* dbc_name,
-              size_t num_message_options, const MessageParseOptions* message_options,
-              size_t num_signal_options, const SignalParseOptions* signal_options);
-
-void can_update(void* can, uint64_t sec, bool wait);
-
-size_t can_query(void* can, uint64_t sec, bool *out_can_valid, size_t out_values_size, SignalValue* out_values);
-
-""")
-
-libdbc = ffi.dlopen(libdbc_fn)
+from selfdrive.can.libdbc_py import libdbc, ffi
 
 class CANParser(object):
   def __init__(self, dbc_name, signals, checks=[], bus=0):
     self.can_valid = True
     self.vl = defaultdict(dict)
+    self.ts = defaultdict(dict)
 
     sig_names = dict((name, ffi.new("char[]", name)) for name, _, _ in signals)
 
@@ -87,7 +51,9 @@ class CANParser(object):
       cv = self.can_values[i]
       address = cv.address
       # print hex(cv.address), ffi.string(cv.name)
-      self.vl[address][ffi.string(cv.name)] = cv.value
+      name = ffi.string(cv.name)
+      self.vl[address][name] = cv.value
+      self.ts[address][name] = cv.ts
       ret.add(address)
     return ret
 
@@ -161,6 +127,7 @@ if __name__ == "__main__":
 
   while True:
     cp.update(int(sec_since_boot()*1e9), True)
-    print cp.vl
+    # print cp.vl
+    print cp.ts
     print cp.can_valid
     time.sleep(0.01)

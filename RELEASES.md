@@ -1,3 +1,33 @@
+Version 0.3.7 (2017-09-30)
+==========================
+ * Improved lateral control using model predictive control
+ * Improved lane centering
+ * Improved GPS
+ * Reduced tendency of path deviation near right side exits
+ * Enable engagement while the accelerator pedal is pressed
+ * Enable engagement while the brake pedal is pressed, when stationary and with lead vehicle within 5m
+ * Disable engagement when park brake or brake hold are active
+ * Fixed sporadic longitudinal pulsing in Civic
+ * Cleanups to vehicle interface
+
+Version 0.3.6.1 (2017-08-15)   
+============================    
+ * Mitigate low speed steering oscillations on some vehicles    
+ * Include board steering check for CR-V
+
+Version 0.3.6 (2017-08-08)
+==========================
+ * Fix alpha CR-V support
+ * Improved GPS
+ * Fix display of target speed not always matching HUD
+ * Increased acceleration after stop
+ * Mitigated some vehicles driving too close to the right line
+
+Version 0.3.5 (2017-07-30)
+==========================
+ * Fix bug where new devices would not begin calibration
+ * Minor robustness improvements
+
 Version 0.3.4 (2017-07-28)
 ==========================
  * Improved model trained on more data
